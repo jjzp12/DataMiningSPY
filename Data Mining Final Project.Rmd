@@ -1,0 +1,496 @@
+---
+title: "Data Mining Final Project"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Juan Zambrano - SPY Project 
+
+The SPY project is about attempting to predict the trend of the Standard and Poors 500 index. The S & P 500 is the most important index in the United States' financial market. As other indexes, they are many Exchange-traded Fun that create tickers that follow indexes. We will be working with SPY which tacks the S & P 500 index. In our project, we will be using three Data Mining methods: Liniar Regression, K-Nearest Neighbors and Time Series to solver our designated problem.
+
+Our problem at hand will be to: Determine the upcoming trend the the SPY 
+
+-----------------------------------------------------------------------------------------------------------------
+
+## Install Packages 
+
+We will be using the following packages in our project.
+
+```{r eval=FALSE, include=FALSE}
+install.packages("gmodels")
+install.packages("class")
+install.packages("tidyverse")
+install.packages("corrplot")
+install.packages("caTools")
+install.packages("Metrics")
+install.packages("olsrr")
+install.packages("gmodels")
+install.packages("forecast")
+install.packages("TTR")
+install.packages("quantmod")
+install.packages("tseries")
+install.packages("timeSeries")
+install.packages("xts")
+```
+
+## Load Libraries
+
+```{r}
+library(tidyverse)
+library(corrplot)
+library(caTools)
+library(Metrics)
+library(olsrr)
+library(gmodels)
+library(caTools)
+library(class)
+library(forecast)
+library(TTR)
+library(quantmod)
+library(tseries)
+library(timeSeries)
+library(xts)
+
+```
+
+## Load Data 
+
+We downloaded data from Yahoo Finance which is one of the biggest providers of financial data and news in the United States. The data was downloaded in a CVS format and ranged from January 23, 2012 to February 23, 2022. 
+
+Source: https://finance.yahoo.com/quote/SPY/history?p=SPY
+
+```{r}
+spy <- read.csv("SPY.csv", stringsAsFactors = T)
+  
+```
+
+## Exploratory Analysis
+
+In our exploratory analysis we tried to obtain fast and insightful information in order to understand the type of data we are working with. It is helpful to see a summary of the data, the different type of string and how it will affect our analysys, and briefly see the first 6 columns to get an idea of how the data looks.
+
+```{r}
+summary(spy)
+
+glimpse(spy)
+
+str(spy)
+
+head(spy)
+
+```
+
+# Data Mining Methods
+
+## Multilivariate Regression
+
+
+### Data Cleaning
+
+We are removing all of categorical variables and obtaining the string type of each column to only include numerical values into our Linear Regression. 
+
+```{r}
+
+spy.lr <- select(spy, -1) %>% na.omit()
+
+str(spy.lr)
+
+```
+
+
+### Praparing Data Set
+
+In order to test our model we have to separate our data set in to training and test. We are splitting with a ratio of 70/30. 
+
+```{r}
+set.seed(123)
+
+spy.lr$sample <- sample.split(spy.lr$Close, SplitRatio = 0.70)
+
+trainlm <- subset(spy.lr, sample == T)
+
+testlm <- subset(spy.lr, sample == F)
+```
+
+### Visualizing Correlation to find best variables for models
+
+As we are trying to only include the most relevant variables in our model, we checked for correlation in the data set and some of the variables against the variable Volume. In our bias thinking, we were wondering if it had a good relevance against Close and Adj. Close. 
+
+```{r}
+
+spy.lr.cor <- cor(spy.lr)
+
+corrplot(spy.lr.cor, method = "number")
+
+```
+
+
+```{r}
+
+ggplot(data = spy.lr, mapping = aes(x = Close, y = Volume
+, color = Close)) + geom_smooth()
+
+
+ggplot(data = spy.lr, mapping = aes(x = Adj.Close, y = Volume
+, color = Close)) + geom_smooth()
+
+```
+
+### Regression Model - Multivariate Model
+
+```{r}
+Spy.lmModel <- lm(Close ~ Open + High +
+              Low + Adj.Close + Volume,
+              data = spy.lr)
+
+Spy.Prediction <- predict(Spy.lmModel, testlm)
+
+
+cat("Linear Regression RMSE", rmse(Spy.Prediction,testlm$Close))
+
+```
+
+### Regression Model - Stepwise Variable Selection
+
+
+```{r}
+stepwiseModel <- ols_step_backward_p(Spy.lmModel, details = T)
+
+stepwiseModelPrediction <- predict(stepwiseModel$model, testlm)
+
+cat("Stepwise Backward RMSE:", rmse(stepwiseModelPrediction, testlm$Close))
+
+```
+
+```{r}
+stepwiseModel <- ols_step_forward_p(Spy.lmModel, details = T)
+
+stepwiseModelPrediction <- predict(stepwiseModel$model, testlm)
+
+cat("Stepwise Forward RMSE:", rmse(stepwiseModelPrediction, testlm$Close))
+```
+
+```{r}
+stepwiseModel <- ols_step_both_p(Spy.lmModel, details = T)
+
+stepwiseModelPrediction <- predict(stepwiseModel$model, testlm)
+
+cat("Stepwise Both RMSE:", rmse(stepwiseModelPrediction, testlm$Close))
+```
+
+### Conclusion:
+
+As our regressions took placed above, we can see that we obtain the same RMSE of 0.9839... and most of our variables we utilized with the exception of Stepwise Forward which selected Low only. As per out results we do not seem to obtain a fair RMSE as our models did not change when ran. We can conclude that out data does not fit into a Linear Regression model. 
+
+## K-Nearest Neighbors 
+
+We are removing all of categorical variables and obtaining the string type of each column to only include numerical values into our K-Nearest Neighbors.
+
+```{r}
+
+spy.knn <- select(spy, -1) %>% na.omit()
+
+spy.knn
+
+```
+
+### Data Transformation 
+
+As we are looking to adapt our data into our KNN model, we have follow certain steps to create categorical values. 
+
+
+First, we have created a new column, ClosevsOpen which gives our a the numerical difference between Open and Close. 
+
+```{r}
+
+spy.knn$ClosevsOpen <- as.double(spy.knn$Close - spy.knn$Open)
+
+spy.knn
+
+```
+
+Second, we have categorized the column ClosevsOpen and set to classify as Negative Close if there was a negative difference and as Positive Close if there was Positive Close if there was a possitve difference. As such, we created to categorical values to be able to fit our date into our KNN model. 
+
+
+```{r}
+spy.knn$Class <- as.factor(ifelse(spy.knn$ClosevsOpen < 0, "Negative Close", "Positive Close"))
+
+summary(spy.knn$Class)
+
+```
+
+### Praparing Data Set
+
+In order to test our model we have to separate our data set in to training and test. We are splitting with a ratio of 70/30. 
+
+```{r}
+set.seed(123)
+
+spy.knn$Sample <- sample.split(spy.knn$Class, SplitRatio = 0.75)
+
+
+spy.knn.train <- subset(spy.knn, Sample == T)
+
+spy.knn.test <- subset(spy.knn, Sample == F)
+
+```
+
+
+### Visualizing variables relation to find best variables for models
+
+
+```{r}
+
+plot(spy.knn$Volume, spy.knn$ClosevsOpen)
+
+plot(spy.knn$High, spy.knn$ClosevsOpen)
+
+plot(spy.knn$Low, spy.knn$ClosevsOpen)
+
+```
+
+```{r}
+ggplot(data = spy.knn, mapping = aes(x = Low, y = High
+, color = Class)) + geom_point()
+```
+
+
+
+### Selecting numeric predictors - Model 1
+
+```{r}
+
+Low.High.Train <- select(spy.knn.train, Low, High)
+
+Low.High.Test <- select(spy.knn.test, Low, High)
+
+```
+
+### Model - Model 1
+
+```{r}
+
+Predicted.Low.High <- knn(train = Low.High.Train, test = Low.High.Test, cl = spy.knn.train$Class, k = 2)
+
+Predicted.Low.High
+
+```
+
+
+### Acurracy Check - Model 1 (Low - High)
+
+
+#### Confusion Matrix
+
+```{r}
+Low.High.Confusion <- table(Predicted.Low.High, spy.knn.test$Class)
+
+Low.High.Confusion
+
+
+```
+```{r}
+accuracyMeasure <- sum(diag(Low.High.Confusion)) / sum(Low.High.Confusion)
+
+cat("KNN Accuracy:",accuracyMeasure)
+```
+
+### Selecting numeric predcitors - Model 2 (Open - Close)
+
+```{r}
+
+Open.Close.Train <- select(spy.knn.train, Open, Close)
+
+Open.Close.Test <- select(spy.knn.test, Open, Close)
+
+```
+
+### Model - Model 2
+
+```{r}
+
+Predicted.Open.Close <- knn(train = Open.Close.Train, test = Open.Close.Test, cl = spy.knn.train$Class, k = 2)
+
+Predicted.Open.Close
+
+```
+
+
+
+
+
+### Acurracy Check - Model 2 
+
+
+#### Confusion Matrix
+
+```{r}
+Open.Close.Confusion <- table(Predicted.Open.Close, spy.knn.test$Class)
+
+Open.Close.Confusion
+
+```
+
+
+
+```{r}
+accuracyMeasure <- sum(diag(Open.Close.Confusion)) / sum(Open.Close.Confusion)
+
+cat("KNN Accuracy:",accuracyMeasure)
+
+```
+
+### Conclusion: 
+
+
+We utilized two different models with variables that would bring the most impact to the model. Such variables were correlated to each other and were thought to be good classifiers to our categories. Model 1 (High - Low) provided an accurracy of 50%, proven not to be useful. On the other hand, Model 2 (Open - Close) provided a better accuracy of 83% although not enough to use as an investment indicator. 
+
+Our SPY data as not having categories, it was overfitted to the model, therefore, not providing trustful results. Additionally, we are not being to predic price overtime but only depending on other numeric values. 
+
+
+## Time Series 
+
+
+### Loading Data
+
+Data collected from Dec 31, 1995 to Feb, 24, 2022 directly from Yahoo Finance using Library getSymbols()
+
+```{r}
+getSymbols('SPY', from = '1995-12-31', to = '2022-2-24')
+
+summary(SPY)
+
+str(SPY)
+
+```
+
+### Data Transformation   
+
+As we prepare our data for our Time Series model, we only select Dates and Close which are the important variables to our model. 
+
+```{r}
+
+SPY.Close <- SPY[,4]
+
+SPY.Close
+```
+
+### Visualization of Data
+
+Here we are taking a visual look of our data and how the SPY has preformed overtime. 
+
+```{r}
+plot(SPY.Close)
+```
+
+We would like to to predict the reaction of price overtime on the SPY for the next 100, 200 and 365 days with different Arimas.
+
+
+###  Auto Arima Model  - (2,1,3) with a drift
+
+
+```{r}
+SPY.Arima <- auto.arima(SPY.Close, seasonal = F)
+
+SPY.Arima
+```
+### Forecast - 100 day
+
+
+```{r}
+SPY.Forecast.100 <- forecast(SPY.Arima, h = 100)
+
+plot(SPY.Forecast.100)
+```
+
+### Forecast - 200 days
+
+```{r}
+SPY.Forecast.200 <- forecast(SPY.Arima, h = 200)
+
+plot(SPY.Forecast.200)
+```
+
+### Forecast - 365 days
+
+```{r}
+SPY.Forecast.365 <- forecast(SPY.Arima, h = 365)
+
+plot(SPY.Forecast.365)
+
+```
+### Accuracy 
+
+
+```{r}
+
+Accurracy <- accuracy(SPY.Forecast.200)
+
+Accurracy
+```
+
+### Arima Model - Custom Log (1,1,1)
+
+```{r}
+SPY.Arima.Standard <- arima(SPY.Close, order = c(1,1,1))
+
+SPY.Arima.Standard
+```
+### Forecast - 100 day
+
+
+```{r}
+SPY.Forecast.100.Standard <- forecast(SPY.Arima.Standard, h = 100)
+
+plot(SPY.Forecast.100.Standard)
+```
+
+### Forecast - 200 days
+
+```{r}
+SPY.Forecast.200.Standard <- forecast(SPY.Arima.Standard, h = 200)
+
+plot(SPY.Forecast.200.Standard)
+```
+
+### Forecast - 365 days
+
+```{r}
+SPY.Forecast.365.Standard <- forecast(SPY.Arima.Standard, h = 365)
+
+plot(SPY.Forecast.365.Standard)
+
+```
+### Accuracy 
+
+
+```{r}
+
+Accurracy.Standard <- accuracy(SPY.Forecast.365.Standard)
+
+Accurracy.Standard
+```
+### Conclusion:
+
+Our Time Series model fitted best with our data set as it can handle dates and numeric vales such as Close. Our two models, Auto Arima and Custom Arima, projected an RMSE of 2.057 and 2.061 receptively. In our forecast, we can see that the Auto Arima model showed a strong uptred in the next 100, 200, and 365 upcoming days whereas the Custom Arima showed a sideways trend. 
+
+Time series model showed that the recent downtrend in the market may be transitory and that we are to maintain our trend or go in an uptrend from here and on. This would represent a good time to buy securities as the risk may only be low.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
